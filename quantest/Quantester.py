@@ -1,6 +1,3 @@
-import pandas as pd
-
-
 class Quantester:
     def __init__(self, bt) -> None:
         self.bt = bt
