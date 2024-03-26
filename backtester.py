@@ -4,12 +4,12 @@ import pandas as pd
 
 class Backtester:
     """
-    A class to backtest trading strategies on historical asset data.
+    A class to backtest custom trading strategies on historical asset data.
 
     Attributes:
-        df (pd.DataFrame): Asset dataframe containing columns datetime, open, high, low, and close.
-        strategy (callable): A function that returns a list of trading signals based on the asset dataframe.
-        strategy_name (str): The name of the trading strategy function.
+        asset_df (pd.DataFrame): Asset dataframe containing columns datetime, open, high, low, and close.
+        strategy (callable): A function that returns a list of non-overlapping trade signals for the asset dataframe.
+        strategy_name (str): The name of the trading strategy function. Ex: mean_reversion_strategy.
         initial_balance (float): The starting balance for backtesting, in the same currency as the asset prices.
         tz_array (np.ndarray): A structured NumPy array representing the trading zones extracted from the asset data.
         trade_template (dict): A template for recording trade details during the backtest.
@@ -22,7 +22,7 @@ class Backtester:
         cl_df (pd.DataFrame or None): Ledger dataframe computed with compounding deployed amounts for each trade.
         long_cl_df (pd.DataFrame or None): The compounding ledger data frame filtered for long positions.
         short_cl_df (pd.DataFrame or None): The compounding ledger data frame filtered for short positions.
-        summary_df (pd.DataFrame or None): Summary dataframe containing key metrics and statistics of the backtest.
+        summary_df (pd.DataFrame or None): Summary data frame containing key metrics and statistics of the backtest.
 
     Methods:
         __init__(self, asset_df, strategy, initial_balance=10000): Initializes the Backtester class with the asset data,
@@ -46,14 +46,10 @@ class Backtester:
             ValueError: If the input parameters are invalid or if the strategy function does not return the expected output.
         """
         # Assign and verify inputs
-        self.df = asset_df  # cols - datetime, open, high, low, close
-        self.strategy = (
-            strategy  # callable returns list of trade signals without overlap
-        )
-        self.strategy_name = (
-            strategy.__name__
-        )  # Ex: mean_reversion_strategy, momentum_trading_strategy
-        self.initial_balance = initial_balance  # same currency as asset price
+        self.df = asset_df
+        self.strategy = strategy
+        self.strategy_name = strategy.__name__
+        self.initial_balance = initial_balance
         self._check_inputs()
 
         # Filter trading zones, create trade template, initialize trade book
@@ -322,17 +318,17 @@ class Backtester:
         balances = []
         pnls = []
 
+        # Calculate balances and pnls for static deployment
         for row in sl_df.itertuples(index=False):
             pnl = (row.change_p / 100) * deployed
-            current_balance += pnl  # Update balance after each trade
-            balances.append(current_balance)  # Reflects balance after the trade
+            current_balance += pnl
+            balances.append(current_balance)
             pnls.append(pnl)
 
-        # Set the deployed and balance columns
+        # Set the deployed, balance, pnl columns and save data frame
         sl_df["deployed"] = [deployed] * len(sl_df)
         sl_df["balance"] = balances
         sl_df["pnl"] = pnls
-
         self.sl_df = sl_df
 
     def _generate_compounding_ledger(self):
@@ -348,12 +344,13 @@ class Backtester:
         balances = []
         pnls = []
 
+        # Calculate deployed amounts, balances, pnls for compounding deployment
         for row in cl_df.itertuples(index=False):
             deployed = current_balance
             pnl = (row.change_p / 100) * deployed
             current_balance += pnl
             deployed_amounts.append(deployed)
-            balances.append(current_balance)  # Reflects balance after the trade
+            balances.append(current_balance)
             pnls.append(pnl)
 
             # Check if broke, stop trading
@@ -366,11 +363,10 @@ class Backtester:
             balances.extend([balances[-1]] * remaining_trade_count)
             pnls.extend([0] * remaining_trade_count)
 
-        # Add deployed and balance amounts to data frame
+        # Add deployed, balance, pnl amounts and save data frame
         cl_df["deployed"] = deployed_amounts
         cl_df["balance"] = balances
         cl_df["pnl"] = pnls
-
         self.cl_df = cl_df
 
     def generate_summary_df(self):
@@ -428,11 +424,12 @@ class Backtester:
         peak_balance = ledger_df["balance"].iloc[0]
 
         for balance in ledger_df["balance"]:
-            if balance > peak_balance:
-                peak_balance = balance  # New peak found
-            else:
-                drawdown = 1 - balance / peak_balance
+            if balance > peak_balance:  # New peak balance found
+                peak_balance = balance
+            else:  # Balance is below previous peak
+                drawdown = 1 - balance / peak_balance  # +ve value
                 if drawdown > max_drawdown:
                     max_drawdown = drawdown
 
-        return max_drawdown * 100  # Convert to percentage
+        # Return as drawdown percentage
+        return max_drawdown * 100
