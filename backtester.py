@@ -55,8 +55,8 @@ class Backtester:
         # Filter trading zones, create trade template, initialize trade book
         self.tz_array = self._generate_trading_zones()
         self.trade_template = {
-            "start_time": 0,
-            "end_time": 0,
+            "start_time": None,
+            "end_time": None,
             "position": 0,
             "entry": 0,
             "crest": 0,
@@ -137,8 +137,8 @@ class Backtester:
         all_signals = np.array(self.strategy(self.df))
         all_positions = np.cumsum(all_signals)
 
-        # Filter out rows where both signal and position are zero initially
-        tz_indices = (all_signals != 0) | (np.roll(all_positions, -1) != 0)
+        # Filter out rows where both signal and position are zero
+        tz_indices = (all_signals != 0) | (all_positions != 0)
         tz_signals = all_signals[tz_indices]
         tz_positions = all_positions[tz_indices]
         # Create a trading zone data frame
@@ -188,7 +188,7 @@ class Backtester:
 
         # Iterate in trading zones using a NumPy structured array
         for row in self.tz_array:
-            if row["signal"] != 0:  # discover order point
+            if row["signal"] != 0:  # place an order - entry / exit / flip
                 if active_position == 0:  # no running position
                     # Enter fresh trade
                     trade = dict(self.trade_template)
@@ -205,6 +205,10 @@ class Backtester:
                 active_position = row["position"]
             else:  # ongoing trade
                 self._update_swings(trade, row, active_position)
+
+        # Remove the last trade if it was taken due to flip
+        if trades[-1]["end_time"] is None:  # last trade is still open
+            trades.pop()
 
         # Add all trades data to the trade book data frame
         self.tb_df = pd.concat([self.tb_df, pd.DataFrame(trades)], ignore_index=True)
@@ -369,35 +373,41 @@ class Backtester:
         cl_df["pnl"] = pnls
         self.cl_df = cl_df
 
-    def generate_summary_df(self):
+    def generate_summary_df(self, positional_components=False):
         """
         Generates a summary dataframe containing key metrics and statistics of the backtesting results.
+        The summary includes metrics such as the number of trades, accuracy, growth rates, drawdowns, etc
+        for long, short, and all trades.
 
-        The summary includes metrics such as the number of trades, accuracy, growth rates, drawdowns, and various
-        performance indicators for long, short, and all trades.
+        Parameters:
+            positional_components (bool): Whether to display long and short position components separately.
 
         Returns:
             pd.DataFrame: A dataframe with the summary of backtesting results.
         """
-        if self.summary_df:  # Summary already exists
-            return self.summary_df
+        # Initialize positional components
+        long_metrics, short_metrics = None, None
+        # Calculate separate metrics if asked
+        if positional_components:
+            # Separate trade book and ledgers into long and short types
+            self._separate_long_short_trades()
+            # Compute metrics for both position types
+            long_metrics = self._calculate_trade_summary(
+                self.long_tb_df, self.long_sl_df, self.long_cl_df
+            )
+            short_metrics = self._calculate_trade_summary(
+                self.short_tb_df, self.short_sl_df, self.short_cl_df
+            )
+        # Calculate complete outcome metrics
+        all_metrics = self._calculate_trade_summary(self.tb_df, self.sl_df, self.cl_df)
 
-        # Compute metrics for different trade categories
-        long_metrics = self._calculate_trade_summary(
-            self.long_tb_df, self.long_sl_df, self.long_cl_df
-        )
-        short_metrics = self._calculate_trade_summary(
-            self.short_tb_df, self.short_sl_df, self.short_cl_df
-        )
-        all_trades_metrics = self._calculate_trade_summary(
-            self.tb_df, self.sl_df, self.cl_df
-        )
-
-        # Assign all calculated metrics
+        # Assign all calculated metrics or H if they have to be hidden
         summary_data = {
-            "long_trades": long_metrics,
-            "short_trades": short_metrics,
-            "all_trades": all_trades_metrics,
+            "long_trades": (long_metrics if long_metrics else ["H"] * len(all_metrics)),
+            "short_trades": (
+                short_metrics if short_metrics else ["H"] * len(all_metrics)
+            ),
+            "all_trades": all_metrics,
         }
 
         # Transform summary object to data frame with named indices
@@ -435,17 +445,23 @@ class Backtester:
         """
         Separates the trade book and ledgers into long and short position categories.
         """
-        # Separate trade book into long and short type positions
-        self.long_tb_df = self.tb_df[self.tb_df["position"] > 0]
-        self.short_tb_df = self.tb_df[self.tb_df["position"] < 0]
+        tb_df = self.tb_df  # quick access trade book
+        # Avoid separation if trade book has no data
+        if tb_df is None or tb_df.empty:
+            return
 
-        # Slice ledger data if available into long and short type positions
-        if self.sl_df is not None:
-            self.long_sl_df = self.sl_df[self.sl_df["position"] > 0]
-            self.short_sl_df = self.sl_df[self.sl_df["position"] < 0]
-        if self.cl_df is not None:
-            self.long_cl_df = self.cl_df[self.cl_df["position"] > 0]
-            self.short_cl_df = self.cl_df[self.cl_df["position"] < 0]
+        # Separate trade book into long and short type positions
+        self.long_tb_df = tb_df[tb_df["position"] > 0]
+        self.short_tb_df = tb_df[tb_df["position"] < 0]
+
+        sl_df, cl_df = self.sl_df, self.cl_df  # quick access ledgers
+        # Slice & save ledger data if available into long and short type positions
+        if sl_df is not None:
+            self.long_sl_df = sl_df[sl_df["position"] > 0]
+            self.short_sl_df = sl_df[sl_df["position"] < 0]
+        if cl_df is not None:
+            self.long_cl_df = cl_df[cl_df["position"] > 0]
+            self.short_cl_df = cl_df[cl_df["position"] < 0]
 
     def _calculate_trade_summary(self, tb_df, sl_df, cl_df):
         """
@@ -530,18 +546,21 @@ class Backtester:
         Returns:
             float: The maximum drawdown percentage observed in the ledger.
         """
-        if ledger_df is None:  # Ledger does not exist
+        if ledger_df is None:  # This ledger is not yet calculated
             return None
+
+        # Initialize maximum drawdown and peak balance
         max_drawdown = 0
         peak_balance = ledger_df["balance"].iloc[0]
 
+        # Iterate ledger to measure drawdowns from peak balances
         for balance in ledger_df["balance"]:
-            if balance > peak_balance:  # New peak balance found
+            if balance > peak_balance:  # Higher peak found
                 peak_balance = balance
-            else:  # Balance is below previous peak
+            else:  # Balance is below current peak
                 drawdown = 1 - balance / peak_balance  # +ve value
-                if drawdown > max_drawdown:
+                if drawdown > max_drawdown:  # Bigger drawdown found
                     max_drawdown = drawdown
 
-        # Return as drawdown percentage
+        # Return max drawdown as percentage
         return max_drawdown * 100
