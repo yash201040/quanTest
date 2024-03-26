@@ -57,7 +57,7 @@ class Backtester:
         self._check_inputs()
 
         # Filter trading zones, create trade template, initialize trade book
-        self.tz_array = self._generate_tz_array()
+        self.tz_array = self._generate_trading_zones()
         self.trade_template = {
             "start_time": 0,
             "end_time": 0,
@@ -126,7 +126,7 @@ class Backtester:
         if self.initial_balance <= 0:
             raise ValueError(balance_message)
 
-    def _generate_tz_array(self):
+    def _generate_trading_zones(self):
         """
         Generates a structured NumPy array containing the trading zones extracted from the asset data frame.
 
