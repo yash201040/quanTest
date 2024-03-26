@@ -379,10 +379,57 @@ class Backtester:
         Returns:
             pd.DataFrame: A dataframe with the summary of backtesting results.
         """
-        if self.summary_df:
+        if self.summary_df:  # Summary already exists
             return self.summary_df
 
-        # THIS METHOD IS WORK IN PROGRESS
+        # Compute metrics for different trade categories
+        long_metrics = self._calculate_trade_summary(
+            self.long_tb_df, self.long_sl_df, self.long_cl_df
+        )
+        short_metrics = self._calculate_trade_summary(
+            self.short_tb_df, self.short_sl_df, self.short_cl_df
+        )
+        all_trades_metrics = self._calculate_trade_summary(
+            self.tb_df, self.sl_df, self.cl_df
+        )
+
+        # Assign all calculated metrics
+        summary_data = {
+            "long_trades": long_metrics,
+            "short_trades": short_metrics,
+            "all_trades": all_trades_metrics,
+        }
+
+        # Transform summary object to data frame with named indices
+        summary_df = pd.DataFrame.from_dict(
+            summary_data,
+            orient="index",
+            columns=[
+                "n_trades",
+                "accuracy",
+                "aagr",
+                "cagr",
+                "static_drawdown",
+                "comp_drawdown",
+                "max_spike_p",
+                "max_dip_p",
+                "max_win_p",
+                "avg_win_p",
+                "min_win_p",
+                "max_loss_p",
+                "avg_loss_p",
+                "min_loss_p",
+                "avg_rr",
+                "worst_rr",
+                "max_duration",
+                "average_duration",
+                "min_duration",
+            ],
+        )
+
+        # Save and return the summary
+        self.summary_df = summary_df
+        return summary_df
 
     def _separate_long_short_trades(self):
         """
@@ -400,6 +447,77 @@ class Backtester:
             self.long_cl_df = self.cl_df[self.cl_df["position"] > 0]
             self.short_cl_df = self.cl_df[self.cl_df["position"] < 0]
 
+    def _calculate_trade_summary(self, tb_df, sl_df, cl_df):
+        """
+        Calculates summary statistics for a set of trades.
+
+        Parameters:
+            tb_df (pd.DataFrame): Trade book dataframe containing details of each trade.
+            sl_df (pd.DataFrame): Static ledger dataframe containing balance changes for static trades.
+            cl_df (pd.DataFrame): Compounding ledger dataframe containing balance changes for compounding trades.
+
+        Returns:
+            list: A list of calculated metrics for the trade set.
+        """
+        if tb_df is None or tb_df.empty:  # If trade book is empty
+            return [None] * 19
+
+        # Calculate all outcome metrics related to the backtest
+        n_trades = len(tb_df)
+        accuracy = tb_df["win"].mean() * 100  # total wins / total trades
+        aagr = None
+        cagr = None
+        max_spike_p = tb_df["spike_p"].max()
+        max_dip_p = tb_df["dip_p"].min()  # Dip is -ve, so min gives largest
+        max_win_p = tb_df[tb_df["win"] == 1]["change_p"].max()
+        avg_win_p = tb_df[tb_df["win"] == 1]["change_p"].mean()
+        min_win_p = tb_df[tb_df["win"] == 1]["change_p"].min()
+        max_loss_p = tb_df[tb_df["win"] == 0]["change_p"].min()  # change_p will be -ve
+        avg_loss_p = tb_df[tb_df["win"] == 0]["change_p"].mean()
+        min_loss_p = tb_df[tb_df["win"] == 0]["change_p"].max()
+        avg_rr = abs(avg_loss_p) / avg_win_p if avg_win_p != 0 else None
+        worst_rr = abs(max_loss_p) / avg_win_p if avg_win_p != 0 else None
+        max_duration = tb_df["duration"].max()
+        avg_duration = tb_df["duration"].mean()
+        min_duration = tb_df["duration"].min()
+        static_drawdown = self._calculate_drawdown(sl_df) if sl_df is not None else None
+        comp_drawdown = self._calculate_drawdown(cl_df) if cl_df is not None else None
+
+        # Calculate AAGR and CAGR
+        period_years = (
+            self.df["datetime"].iloc[-1] - self.df["datetime"].iloc[0]
+        ) / np.timedelta64(1, "Y")
+        total_change_p = tb_df["change_p"].sum()
+        aagr = (total_change_p / n_trades) / period_years if period_years > 0 else None
+        cagr = (
+            ((1 + total_change_p / 100) ** (1 / period_years) - 1) * 100
+            if period_years > 0
+            else None
+        )
+
+        # Return list of all outcome metrics
+        return [
+            n_trades,
+            accuracy,
+            aagr,
+            cagr,
+            static_drawdown,
+            comp_drawdown,
+            max_spike_p,
+            max_dip_p,
+            max_win_p,
+            avg_win_p,
+            min_win_p,
+            max_loss_p,
+            avg_loss_p,
+            min_loss_p,
+            avg_rr,
+            worst_rr,
+            max_duration,
+            avg_duration,
+            min_duration,
+        ]
+
     def _calculate_drawdown(self, ledger_df):
         """
         Calculates the maximum drawdown percentage in the ledger.
@@ -412,6 +530,8 @@ class Backtester:
         Returns:
             float: The maximum drawdown percentage observed in the ledger.
         """
+        if ledger_df is None:  # Ledger does not exist
+            return None
         max_drawdown = 0
         peak_balance = ledger_df["balance"].iloc[0]
 
