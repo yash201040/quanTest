@@ -130,7 +130,7 @@ class Backtester:
         and converts this filtered data into a structured NumPy array for efficient processing.
 
         Returns:
-            np.ndarray: A structured NumPy array with fields for datetime, high, low, close, signal, and position,
+            np.ndarray: A structured NumPy array with fields for datetime, high, low, close, signal, position;
                         representing the trading zones.
         """
         # Calculate all trade signals and positional states
@@ -179,7 +179,7 @@ class Backtester:
         This method iterates through the trading zones, applies the trading strategy to make trades,
         updates the trade book, and captures trade details such as entry, exit, highs, and lows.
 
-        After completing the trades, it appends the trade data to the trade book data frame (self.tb_df).
+        After completing trades, it appends trade data to the trade book data frame (self.tb_df).
         """
         # Create a list to store all trades
         trades = []
@@ -252,7 +252,7 @@ class Backtester:
 
     def _compute_trade_metrics(self):
         """
-        Computes and assigns trade metrics such as win rate, percentage changes, and durations to the trade book dataframe.
+        Computes and assigns trade outcomes such as win, percentage change and duration to the trade book dataframe.
         """
         # Assign tb_df for quick access
         tb_df = self.tb_df
@@ -386,14 +386,7 @@ class Backtester:
 
     def _separate_long_short_trades(self):
         """
-        Separates the trades into long and short categories and integrates ledger data if available.
-
-        This method divides the trades based on their position (long or short) and also separates the static and compounding
-        ledger dataframes into long and short trades if they exist.
-
-        Returns:
-            tuple: A tuple containing dataframes for long trades, short trades, long and short static ledgers,
-                   and long and short compounding ledgers.
+        Separates the trade book and ledgers into long and short position categories.
         """
         # Separate trade book into long and short type positions
         self.long_tb_df = self.tb_df[self.tb_df["position"] > 0]
@@ -411,8 +404,7 @@ class Backtester:
         """
         Calculates the maximum drawdown percentage in the ledger.
 
-        The drawdown is the maximum observed loss from a peak to a trough in the balance over a period,
-        before a new peak is achieved.
+        A drawdown is the maximum observed loss from a peak to a trough in the balance.
 
         Parameters:
             ledger_df (pd.DataFrame): The ledger dataframe containing balance information.
