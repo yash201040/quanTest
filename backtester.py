@@ -68,7 +68,7 @@ class Backtester:
             "dip_p": 0,
             "duration": 0,
         }
-        self.tb_df = pd.DataFrame(columns=self.trade_template.keys())
+        self.tb_df = None  # all trades
         self.long_tb_df = None  # long trades
         self.short_tb_df = None  # short trades
 
@@ -210,8 +210,7 @@ class Backtester:
         if trades[-1]["end_time"] is None:  # last trade is still open
             trades.pop()
 
-        # Add all trades data to the trade book data frame
-        self.tb_df = pd.concat([self.tb_df, pd.DataFrame(trades)], ignore_index=True)
+        self.tb_df = pd.DataFrame(trades)
 
     def _enter_trade(self, trade, row):
         """
@@ -416,11 +415,11 @@ class Backtester:
             orient="index",
             columns=[
                 "n_trades",
-                "accuracy",
-                "aagr",
-                "cagr",
-                "static_drawdown",
-                "comp_drawdown",
+                "accuracy_p",
+                "aagr_p",
+                "cagr_p",
+                "static_drawdown_p",
+                "comp_drawdown_p",
                 "max_spike_p",
                 "max_dip_p",
                 "max_win_p",
@@ -480,9 +479,9 @@ class Backtester:
 
         # Calculate all outcome metrics related to the backtest
         n_trades = len(tb_df)
-        accuracy = tb_df["win"].mean() * 100  # total wins / total trades
-        aagr = None
-        cagr = None
+        accuracy_p = tb_df["win"].mean() * 100  # total wins / total trades
+        aagr_p = None
+        cagr_p = None
         max_spike_p = tb_df["spike_p"].max()
         max_dip_p = tb_df["dip_p"].min()  # Dip is -ve, so min gives largest
         max_win_p = tb_df[tb_df["win"] == 1]["change_p"].max()
@@ -496,16 +495,23 @@ class Backtester:
         max_duration = tb_df["duration"].max()
         avg_duration = tb_df["duration"].mean()
         min_duration = tb_df["duration"].min()
-        static_drawdown = self._calculate_drawdown(sl_df) if sl_df is not None else None
-        comp_drawdown = self._calculate_drawdown(cl_df) if cl_df is not None else None
+        static_drawdown_p = (
+            self._calculate_drawdown(sl_df) if sl_df is not None else None
+        )
+        comp_drawdown_p = self._calculate_drawdown(cl_df) if cl_df is not None else None
 
-        # Calculate AAGR and CAGR
-        period_years = (
-            self.df["datetime"].iloc[-1] - self.df["datetime"].iloc[0]
-        ) / np.timedelta64(1, "Y")
+        # Calculate time delta between end time of last trade and start time of first trade
+        timedelta = tb_df["end_time"].iloc[-1] - tb_df["start_time"].iloc[0]
+        # Convert timedelta to days and divide by days per year
+        period_years = timedelta.days / 365.25
+
+        # Calculate net change percentage from all trades
         total_change_p = tb_df["change_p"].sum()
-        aagr = (total_change_p / n_trades) / period_years if period_years > 0 else None
-        cagr = (
+        # Calculate AAGR and CAGR in percentages
+        aagr_p = (
+            (total_change_p / n_trades) / period_years if period_years > 0 else None
+        )
+        cagr_p = (
             ((1 + total_change_p / 100) ** (1 / period_years) - 1) * 100
             if period_years > 0
             else None
@@ -514,11 +520,11 @@ class Backtester:
         # Return list of all outcome metrics
         return [
             n_trades,
-            accuracy,
-            aagr,
-            cagr,
-            static_drawdown,
-            comp_drawdown,
+            accuracy_p,
+            aagr_p,
+            cagr_p,
+            static_drawdown_p,
+            comp_drawdown_p,
             max_spike_p,
             max_dip_p,
             max_win_p,
