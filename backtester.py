@@ -424,10 +424,8 @@ class Backtester:
                 "max_dip_p",
                 "max_win_p",
                 "avg_win_p",
-                "min_win_p",
                 "max_loss_p",
                 "avg_loss_p",
-                "min_loss_p",
                 "avg_rr",
                 "worst_rr",
                 "max_duration",
@@ -475,7 +473,7 @@ class Backtester:
             list: A list of calculated metrics for the trade set.
         """
         if tb_df is None or tb_df.empty:  # If trade book is empty
-            return [None] * 19
+            return [None] * 17
 
         # Calculate all outcome metrics related to the backtest
         n_trades = len(tb_df)
@@ -486,10 +484,8 @@ class Backtester:
         max_dip_p = tb_df["dip_p"].min()  # Dip is -ve, so min gives largest
         max_win_p = tb_df[tb_df["win"] == 1]["change_p"].max()
         avg_win_p = tb_df[tb_df["win"] == 1]["change_p"].mean()
-        min_win_p = tb_df[tb_df["win"] == 1]["change_p"].min()
         max_loss_p = tb_df[tb_df["win"] == 0]["change_p"].min()  # change_p will be -ve
         avg_loss_p = tb_df[tb_df["win"] == 0]["change_p"].mean()
-        min_loss_p = tb_df[tb_df["win"] == 0]["change_p"].max()
         avg_rr = abs(avg_loss_p) / avg_win_p if avg_win_p != 0 else None
         worst_rr = abs(max_loss_p) / avg_win_p if avg_win_p != 0 else None
         max_duration = tb_df["duration"].max()
@@ -529,10 +525,8 @@ class Backtester:
             max_dip_p,
             max_win_p,
             avg_win_p,
-            min_win_p,
             max_loss_p,
             avg_loss_p,
-            min_loss_p,
             avg_rr,
             worst_rr,
             max_duration,
