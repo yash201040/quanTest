@@ -430,7 +430,6 @@ class Backtester:
                 "worst_rr",
                 "max_duration",
                 "average_duration",
-                "min_duration",
             ],
         )
 
@@ -473,7 +472,7 @@ class Backtester:
             list: A list of calculated metrics for the trade set.
         """
         if tb_df is None or tb_df.empty:  # If trade book is empty
-            return [None] * 17
+            return [None] * 16
 
         # Calculate all outcome metrics related to the backtest
         n_trades = len(tb_df)
@@ -490,7 +489,6 @@ class Backtester:
         worst_rr = abs(max_loss_p) / avg_win_p if avg_win_p != 0 else None
         max_duration = tb_df["duration"].max()
         avg_duration = tb_df["duration"].mean()
-        min_duration = tb_df["duration"].min()
         static_drawdown_p = (
             self._calculate_drawdown(sl_df) if sl_df is not None else None
         )
@@ -531,7 +529,6 @@ class Backtester:
             worst_rr,
             max_duration,
             avg_duration,
-            min_duration,
         ]
 
     def _calculate_drawdown(self, ledger_df):
